@@ -12,54 +12,71 @@ export class MapComponent implements AfterViewInit {
 
   async ngAfterViewInit(): Promise<void> {
     if (typeof window !== 'undefined') {
-      const L = await import('leaflet'); // ✅ dynamic import
+      const L = await import('leaflet');
 
-      // Default map location → Amravati
+      // Default → Amravati
       const amravatiLat = 20.9333;
       const amravatiLng = 77.75;
 
       this.map = L.map('map').setView([amravatiLat, amravatiLng], 13);
 
-      // Base layer
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
         attribution: '© OpenStreetMap contributors'
       }).addTo(this.map);
 
-      // --- Search Functionality ---
+      // --- Auto-complete Search ---
       const searchBox = document.getElementById('searchBox') as HTMLInputElement;
-      const searchBtn = document.getElementById('searchBtn');
+      const suggestions = document.getElementById('suggestions') as HTMLUListElement;
 
-      if (searchBtn) {
-        searchBtn.addEventListener('click', async () => {
-          const query = searchBox.value.trim();
-          if (!query) return;
+      let typingTimer: any;
 
-          // Call Nominatim API
-          const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}`);
+      searchBox.addEventListener('input', () => {
+        clearTimeout(typingTimer);
+        const query = searchBox.value.trim();
+        if (query.length < 3) {
+          suggestions.style.display = 'none';
+          return;
+        }
+
+        typingTimer = setTimeout(async () => {
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&addressdetails=1&limit=5`);
           const results = await response.json();
 
+          suggestions.innerHTML = '';
           if (results.length > 0) {
-            const lat = results[0].lat;
-            const lon = results[0].lon;
+            results.forEach((place: any) => {
+              const li = document.createElement('li');
+              li.textContent = place.display_name;
+              li.style.padding = "8px";
+              li.style.cursor = "pointer";
 
-            // Remove old marker if exists
-            if (this.marker) {
-              this.map.removeLayer(this.marker);
-            }
+              li.addEventListener('click', () => {
+                searchBox.value = place.display_name;
+                suggestions.style.display = 'none';
 
-            // Add new marker
-            this.marker = L.marker([lat, lon]).addTo(this.map)
-              .bindPopup(`📍 ${results[0].display_name}`)
-              .openPopup();
+                const lat = parseFloat(place.lat);
+                const lon = parseFloat(place.lon);
 
-            // Move map view
-            this.map.setView([lat, lon], 14);
+                if (this.marker) {
+                  this.map.removeLayer(this.marker);
+                }
+
+                this.marker = L.marker([lat, lon]).addTo(this.map)
+                  .bindPopup(`📍 ${place.display_name}`)
+                  .openPopup();
+
+                this.map.setView([lat, lon], 14);
+              });
+
+              suggestions.appendChild(li);
+            });
+            suggestions.style.display = 'block';
           } else {
-            alert('❌ Location not found!');
+            suggestions.style.display = 'none';
           }
-        });
-      }
+        }, 400); // debounce (wait 0.4s after typing)
+      });
     }
   }
 }
